@@ -20,6 +20,8 @@ type (
 		SendTaskCh    chan Task
 		WarningTaskCh chan Task
 		SuccessTaskCh chan Task
+		store         *AppStore
+		ticker        *time.Ticker
 	}
 
 	Task struct {
@@ -30,95 +32,95 @@ type (
 	}
 )
 
-func InitAppTaskHandler(ctx context.Context) *AppTaskHandler {
+func InitAppTaskHandler(ctx context.Context, store *AppStore) *AppTaskHandler {
+	ticker := time.NewTicker(time.Second * 2)
 	return &AppTaskHandler{
 		Ctx:           ctx,
 		Wg:            &sync.WaitGroup{},
 		SendTaskCh:    make(chan Task),
 		WarningTaskCh: make(chan Task),
 		SuccessTaskCh: make(chan Task),
+		store:         store,
+		ticker:        ticker,
 	}
 }
 
 // сonsume channel with tasks
-func (app *AppTaskHandler) Recv(d chan struct{}) {
+func (app *AppTaskHandler) Recv(stopCh chan bool) {
 	defer app.Wg.Done()
 
 	for {
 		select {
-		case <-d:
+		case <-stopCh:
+			close(stopCh)
 			return
-		// case <-app.Ctx.Done():
-		// 	close(app.SuccessTaskCh)
-		// 	close(app.WarningTaskCh)
-		// 	log.Println(" ctx done")
-		// 	return
 		case task, ok := <-app.SendTaskCh:
 			if ok {
+				// разделение тасков
 				if CheckCreateTime(task.CreateTime) {
 					task.ResultRunTask = []byte(SuccessTaskMsg)
-					// fmt.Println("SUCCESS:", task)
 					app.SuccessTaskCh <- task
 				} else {
 					task.ResultRunTask = []byte(ErrorTaskMsg)
-					// fmt.Println("FAILED:", task)
 					app.WarningTaskCh <- task
 				}
 			} else {
 				close(app.SuccessTaskCh)
 				close(app.WarningTaskCh)
+				// stopCh <- true
+				// close(stopCh)
+				// app.ticker.Stop()
 				return
 			}
 		}
 	}
 }
 
-// обрабатываем отдельно Success Tasks и Failed Tasks
+// обрабатываем отдельно Success и Failed
 func (app *AppTaskHandler) OutputSuccessData() {
 	defer app.Wg.Done()
 
-	for task := range app.SuccessTaskCh { // !!!
+	for task := range app.SuccessTaskCh {
 		fmt.Println("SUCCESS:", task)
+		// app.store.LoadSuccess(task)
 	}
 
-	// for {
-	// 	select {
-	// 	case <-app.Ctx.Done():
-	// 		return
-	// 	case task, ok := <-app.SuccessTaskCh:
-	// 		if ok {
-	// 			fmt.Println("SUCCESS:", task)
-	// 			// app.StoreTask.LoadSuccess(task)
-	// 		} else {
-	// 			// TODO done ch
-	// 			return
-	// 		}
-	// 	}
-	// }
 }
 
 // обрабатываем отдельно Failed Tasks и Success Tasks
 func (app *AppTaskHandler) OutputFailedData() {
 	defer app.Wg.Done()
 
-	for task := range app.WarningTaskCh { // !!!
+	for task := range app.WarningTaskCh {
 		fmt.Println("FAILED:", task)
+		// app.store.LoadFail(task)
 	}
+}
 
-	// for {
-	// 	select {
-	// 	case <-app.Ctx.Done():
-	// 		return
-	// 	case task, ok := <-app.WarningTaskCh:
-	// 		if ok {
-	// 			fmt.Println("FAILED:", task)
-	// 			// app.StoreTask.LoadFail(task)
-	// 		} else {
-	// 			// TODO done ch
-	// 			return
-	// 		}
-	// 	}
-	// }
+func (app *AppTaskHandler) PrintData(d chan bool) {
+	defer app.Wg.Done()
+
+	for {
+		select {
+		case <-d:
+			return
+		case _, ok := <-app.ticker.C:
+			if ok {
+				app.store.mutex.RLock()
+				for id, v := range app.store.FailedData {
+					fmt.Println("FAILED:", "ID:", id, v)
+				}
+				for id, v := range app.store.SuccessData {
+					fmt.Println("SUCCESS:", "ID:", id, v)
+				}
+				app.store.mutex.RUnlock()
+				app.store.CleanMap()
+				fmt.Println("---")
+			} else {
+				return
+			}
+		}
+	}
 }
 
 // проверка состояния выполнения задачи

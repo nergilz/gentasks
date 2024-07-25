@@ -11,18 +11,19 @@ import (
 func main() {
 	log.Println("run app worker")
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*13)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*12)
 	defer cancel()
+	stopCh := make(chan bool)
 
-	app := handler.InitAppTaskHandler(ctx)
+	store := handler.InitStore()
 
-	app.Wg.Add(1)
-	go generator.Send(app.SendTaskCh, app.Wg)
-
-	var d chan struct{}
+	app := handler.InitAppTaskHandler(ctx, store)
 
 	app.Wg.Add(1)
-	go app.Recv(d)
+	go generator.Send(ctx, app.SendTaskCh, app.Wg)
+
+	app.Wg.Add(1)
+	go app.Recv(stopCh)
 
 	app.Wg.Add(1)
 	go app.OutputSuccessData()
@@ -30,12 +31,12 @@ func main() {
 	app.Wg.Add(1)
 	go app.OutputFailedData()
 
+	// app.Wg.Add(1)
+	// go app.PrintData(stopCh)
+
 	app.Wg.Wait()
 
 	log.Println("worker stoped")
-
-	time.Sleep(time.Second * 5)
-	log.Println("timer 5 sec")
 }
 
 // //----------------оригинальный код из задачи---------------------------------------------------------------

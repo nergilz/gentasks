@@ -1,16 +1,18 @@
 package handler
 
-import "sync"
+import (
+	"sync"
+)
 
 type AppStore struct {
-	mutex       sync.Mutex
+	mutex       sync.RWMutex
 	SuccessData map[int]Task
 	FailedData  map[int]Task
 }
 
 func InitStore() *AppStore {
 	return &AppStore{
-		mutex:       sync.Mutex{},
+		mutex:       sync.RWMutex{},
 		SuccessData: make(map[int]Task, 0),
 		FailedData:  make(map[int]Task, 0),
 	}
