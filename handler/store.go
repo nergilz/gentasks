@@ -34,13 +34,9 @@ func (s *AppStore) LoadFail(task Task) {
 	s.mutex.Unlock()
 }
 
-func (s *AppStore) CleanMap() {
+func (s *AppStore) ClearMap() {
 	s.mutex.Lock()
-	for key := range s.SuccessData {
-		delete(s.SuccessData, key)
-	}
-	for key := range s.FailedData {
-		delete(s.FailedData, key)
-	}
+	clear(s.FailedData)
+	clear(s.SuccessData)
 	s.mutex.Unlock()
 }

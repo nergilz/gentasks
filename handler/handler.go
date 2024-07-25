@@ -3,119 +3,116 @@ package handler
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 const (
-	WorkerTimer    int = 10
-	SuccessTaskMsg     = "SUCCESS task, has been work"
-	ErrorTaskMsg       = "FAILED task, not has been work"
+	WorkerTimer    = 10
+	OutpuTicker    = 3
+	SuccessTaskMsg = "SUCCESS, task has been work"
+	FailTaskMsg    = "FAILED, task not has been work"
 )
 
 type (
-	AppTaskHandler struct {
+	AppHandler struct {
 		Ctx           context.Context
+		cancel        context.CancelFunc
 		Wg            *sync.WaitGroup
 		SendTaskCh    chan Task
 		WarningTaskCh chan Task
 		SuccessTaskCh chan Task
 		store         *AppStore
 		ticker        *time.Ticker
+		done          chan bool
 	}
 
 	Task struct {
 		Id            int
-		CreateTime    string // время создания
-		ExecutionTime string // время выполнения
-		ResultRunTask []byte
+		CreateTime    string
+		ExecutionTime string
+		WorkResult    string
+		State         int
 	}
 )
 
-func InitAppTaskHandler(ctx context.Context, store *AppStore) *AppTaskHandler {
-	ticker := time.NewTicker(time.Second * 2)
-	return &AppTaskHandler{
+func InitAppHandler(ctx context.Context, store *AppStore, cancel context.CancelFunc) *AppHandler {
+	return &AppHandler{
 		Ctx:           ctx,
 		Wg:            &sync.WaitGroup{},
-		SendTaskCh:    make(chan Task),
-		WarningTaskCh: make(chan Task),
-		SuccessTaskCh: make(chan Task),
+		SendTaskCh:    make(chan Task, 256),
+		WarningTaskCh: make(chan Task, 256),
+		SuccessTaskCh: make(chan Task, 256),
 		store:         store,
-		ticker:        ticker,
+		cancel:        cancel,
+		ticker:        time.NewTicker(time.Second * OutpuTicker),
+		done:          make(chan bool, 1),
 	}
 }
 
 // сonsume channel with tasks
-func (app *AppTaskHandler) Recv(stopCh chan bool) {
+func (app *AppHandler) Recv() {
 	defer app.Wg.Done()
+	defer close(app.SuccessTaskCh)
+	defer close(app.WarningTaskCh)
+	defer close(app.done)
 
 	for {
 		select {
-		case <-stopCh:
-			close(stopCh)
+		case <-app.Ctx.Done():
 			return
 		case task, ok := <-app.SendTaskCh:
 			if ok {
-				// разделение тасков
-				if CheckCreateTime(task.CreateTime) {
-					task.ResultRunTask = []byte(SuccessTaskMsg)
-					app.SuccessTaskCh <- task
-				} else {
-					task.ResultRunTask = []byte(ErrorTaskMsg)
+				switch task.State {
+				case 0:
+					task.WorkResult = FailTaskMsg
+					task.ExecutionTime = time.Now().Format(time.RFC3339)
 					app.WarningTaskCh <- task
+				case 1:
+					task.WorkResult = SuccessTaskMsg
+					task.ExecutionTime = time.Now().Format(time.RFC3339)
+					app.SuccessTaskCh <- task
 				}
 			} else {
-				close(app.SuccessTaskCh)
-				close(app.WarningTaskCh)
-				// stopCh <- true
-				// close(stopCh)
-				// app.ticker.Stop()
+				app.done <- true
 				return
 			}
 		}
 	}
 }
 
-// обрабатываем отдельно Success и Failed
-func (app *AppTaskHandler) OutputSuccessData() {
+func (app *AppHandler) LoadSuccess() {
 	defer app.Wg.Done()
 
 	for task := range app.SuccessTaskCh {
-		fmt.Println("SUCCESS:", task)
-		// app.store.LoadSuccess(task)
+		app.store.LoadSuccess(task)
 	}
-
 }
 
-// обрабатываем отдельно Failed Tasks и Success Tasks
-func (app *AppTaskHandler) OutputFailedData() {
+func (app *AppHandler) LoadFailed() {
 	defer app.Wg.Done()
 
 	for task := range app.WarningTaskCh {
-		fmt.Println("FAILED:", task)
-		// app.store.LoadFail(task)
+		app.store.LoadFail(task)
 	}
 }
 
-func (app *AppTaskHandler) PrintData(d chan bool) {
+func (app *AppHandler) Output(sendC, recvC *uint32) {
 	defer app.Wg.Done()
 
 	for {
 		select {
-		case <-d:
+		case <-app.Ctx.Done():
+			return
+		case <-app.done:
+			fmt.Println(" send worker done")
 			return
 		case _, ok := <-app.ticker.C:
 			if ok {
-				app.store.mutex.RLock()
-				for id, v := range app.store.FailedData {
-					fmt.Println("FAILED:", "ID:", id, v)
-				}
-				for id, v := range app.store.SuccessData {
-					fmt.Println("SUCCESS:", "ID:", id, v)
-				}
-				app.store.mutex.RUnlock()
-				app.store.CleanMap()
-				fmt.Println("---")
+				app.printSeparateTaskFromStore(recvC)
+				log.Println("send task:", *sendC, "recive task", *recvC)
 			} else {
 				return
 			}
@@ -123,14 +120,19 @@ func (app *AppTaskHandler) PrintData(d chan bool) {
 	}
 }
 
-// проверка состояния выполнения задачи
-func CheckCreateTime(createTime string) bool {
-	var res bool
-	_, err := time.Parse(time.RFC3339, createTime)
-	if err != nil {
-		res = false
-		return res
+func (app *AppHandler) printSeparateTaskFromStore(recvC *uint32) {
+	app.store.mutex.RLock()
+
+	for id, task := range app.store.FailedData {
+		fmt.Println("ID:", id, task)
+		atomic.AddUint32(recvC, 1)
 	}
-	res = true
-	return res
+
+	for id, task := range app.store.SuccessData {
+		fmt.Println("ID:", id, task)
+		atomic.AddUint32(recvC, 1)
+	}
+
+	app.store.mutex.RUnlock()
+	app.store.ClearMap()
 }

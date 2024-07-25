@@ -5,66 +5,56 @@ import (
 	"gentasks/handler"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
-type GeneratorTask struct {
+const (
+	TaskDuration = 100
+)
+
+type Generator struct {
+	Ctx    context.Context
+	Wg     *sync.WaitGroup
+	SendCh chan handler.Task
 }
 
-// run tasks and write to channel with warning tasks
-func Send(ctx context.Context, sendCh chan handler.Task, wg *sync.WaitGroup) {
-	defer wg.Done()
+func InitGenerator(ctx context.Context, sendCh chan handler.Task, wg *sync.WaitGroup) *Generator {
+	return &Generator{
+		Ctx:    ctx,
+		Wg:     wg,
+		SendCh: sendCh,
+	}
+}
+
+func (g *Generator) Send(sendC *uint32) {
+	defer g.Wg.Done()
+	defer close(g.SendCh)
+
 	timer := time.NewTimer(time.Second * time.Duration(handler.WorkerTimer))
 
 	for {
 		select {
-		case <-ctx.Done():
-			close(sendCh)
-			log.Println(" ctx done")
+		case <-g.Ctx.Done():
+			log.Println(" ctx send done")
 			return
 		case <-timer.C:
-			close(sendCh)
-			log.Println(" timer click")
+			log.Println(" timer stop")
 			return
-		default:
-			time.Sleep(time.Millisecond * 500)
-
+		case <-time.After(time.Millisecond * TaskDuration):
 			t := time.Now()
-			create := t.Format(time.RFC3339)
-
 			newTask := handler.Task{
-				Id:         int(t.Unix()),
-				CreateTime: create,
+				Id:         int(t.UnixMicro()),
+				CreateTime: t.Format(time.RFC3339),
+				State:      1,
 			}
 			// условие появления ошибочных тасков
 			if t.Nanosecond()%2 > 0 {
-				newTask.CreateTime = "bad create time"
+				newTask.State = 0
 			}
-			sendCh <- newTask
+
+			atomic.AddUint32(sendC, 1)
+			g.SendCh <- newTask
 		}
 	}
-}
-
-func TestSend(ctx context.Context, c chan handler.Task, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	for i := 0; i < 20; i++ {
-		time.Sleep(time.Millisecond * 500)
-
-		t := time.Now()
-		create := t.Format(time.RFC3339)
-
-		newTask := handler.Task{
-			Id:         i,
-			CreateTime: create,
-		}
-
-		if i%2 > 0 {
-			newTask.CreateTime = "bad create time"
-		}
-
-		c <- newTask
-	}
-
-	close(c)
 }
