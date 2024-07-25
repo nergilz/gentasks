@@ -51,7 +51,7 @@ func (app *AppTaskHandler) Recv(d chan struct{}) {
 		// case <-app.Ctx.Done():
 		// 	close(app.SuccessTaskCh)
 		// 	close(app.WarningTaskCh)
-		// 	log.Println(" ctx done")
+		// 	fmt.Println(" ctx done")
 		// 	return
 		case task, ok := <-app.SendTaskCh:
 			if ok {

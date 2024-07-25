@@ -1,6 +1,7 @@
 package generator
 
 import (
+	"context"
 	"gentasks/handler"
 	"log"
 	"sync"
@@ -11,16 +12,16 @@ type GeneratorTask struct {
 }
 
 // run tasks and write to channel with warning tasks
-func Send(c chan handler.Task, wg *sync.WaitGroup) {
+func Send(ctx context.Context, c chan handler.Task, wg *sync.WaitGroup) {
 	defer wg.Done()
 	timer := time.NewTimer(time.Second * time.Duration(handler.WorkerTimer))
 
 	for {
 		select {
-		// case <-ctx.Done():
-		// 	close(c)
-		// 	log.Println(" ctx done")
-		// 	return
+		case <-ctx.Done():
+			close(c)
+			log.Println(" ctx done")
+			return
 		case <-timer.C:
 			close(c)
 			log.Println(" timer click")
@@ -44,6 +45,7 @@ func Send(c chan handler.Task, wg *sync.WaitGroup) {
 	}
 }
 
+// тестовавя отправка
 func TestSend(c chan handler.Task, wg *sync.WaitGroup) {
 	defer wg.Done()
 

@@ -11,13 +11,13 @@ import (
 func main() {
 	log.Println("run app worker")
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*13)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*9)
 	defer cancel()
 
 	app := handler.InitAppTaskHandler(ctx)
 
 	app.Wg.Add(1)
-	go generator.Send(app.SendTaskCh, app.Wg)
+	go generator.Send(ctx, app.SendTaskCh, app.Wg)
 
 	var d chan struct{}
 
