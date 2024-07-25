@@ -18,15 +18,13 @@ const (
 
 type (
 	AppHandler struct {
-		Ctx           context.Context
-		cancel        context.CancelFunc
+		ctx           context.Context
 		Wg            *sync.WaitGroup
 		SendTaskCh    chan Task
 		WarningTaskCh chan Task
 		SuccessTaskCh chan Task
-		store         *AppStore
-		ticker        *time.Ticker
-		done          chan bool
+		Store         *AppStore
+		done          chan int
 	}
 
 	Task struct {
@@ -38,17 +36,15 @@ type (
 	}
 )
 
-func InitAppHandler(ctx context.Context, store *AppStore, cancel context.CancelFunc) *AppHandler {
+func InitAppHandler(ctx context.Context, store *AppStore) *AppHandler {
 	return &AppHandler{
-		Ctx:           ctx,
+		ctx:           ctx,
 		Wg:            &sync.WaitGroup{},
 		SendTaskCh:    make(chan Task, 256),
 		WarningTaskCh: make(chan Task, 256),
 		SuccessTaskCh: make(chan Task, 256),
-		store:         store,
-		cancel:        cancel,
-		ticker:        time.NewTicker(time.Second * OutpuTicker),
-		done:          make(chan bool, 1),
+		Store:         store,
+		done:          make(chan int),
 	}
 }
 
@@ -61,7 +57,7 @@ func (app *AppHandler) Recv() {
 
 	for {
 		select {
-		case <-app.Ctx.Done():
+		case <-app.ctx.Done():
 			return
 		case task, ok := <-app.SendTaskCh:
 			if ok {
@@ -76,7 +72,7 @@ func (app *AppHandler) Recv() {
 					app.SuccessTaskCh <- task
 				}
 			} else {
-				app.done <- true
+				app.done <- 1
 				return
 			}
 		}
@@ -87,7 +83,7 @@ func (app *AppHandler) LoadSuccess() {
 	defer app.Wg.Done()
 
 	for task := range app.SuccessTaskCh {
-		app.store.LoadSuccess(task)
+		app.Store.LoadSuccess(task)
 	}
 }
 
@@ -95,44 +91,45 @@ func (app *AppHandler) LoadFailed() {
 	defer app.Wg.Done()
 
 	for task := range app.WarningTaskCh {
-		app.store.LoadFail(task)
+		app.Store.LoadFail(task)
 	}
 }
 
 func (app *AppHandler) Output(sendC, recvC *uint32) {
 	defer app.Wg.Done()
 
+	ticker := time.NewTicker(time.Second * OutpuTicker)
+	defer ticker.Stop()
+
 	for {
 		select {
-		case <-app.Ctx.Done():
+		case <-app.ctx.Done():
 			return
 		case <-app.done:
+			app.printSeparateTaskFromStore(recvC)
+			log.Println("send task:", *sendC, "recive task", *recvC)
 			fmt.Println(" send worker done")
 			return
-		case _, ok := <-app.ticker.C:
-			if ok {
-				app.printSeparateTaskFromStore(recvC)
-				log.Println("send task:", *sendC, "recive task", *recvC)
-			} else {
-				return
-			}
+		case <-ticker.C:
+			app.printSeparateTaskFromStore(recvC)
+			log.Println("send task:", *sendC, "recive task", *recvC)
 		}
 	}
 }
 
 func (app *AppHandler) printSeparateTaskFromStore(recvC *uint32) {
-	app.store.mutex.RLock()
+	app.Store.mutex.RLock()
 
-	for id, task := range app.store.FailedData {
+	for id, task := range app.Store.FailedData {
 		fmt.Println("ID:", id, task)
 		atomic.AddUint32(recvC, 1)
 	}
 
-	for id, task := range app.store.SuccessData {
+	for id, task := range app.Store.SuccessData {
 		fmt.Println("ID:", id, task)
 		atomic.AddUint32(recvC, 1)
 	}
 
-	app.store.mutex.RUnlock()
-	app.store.ClearMap()
+	app.Store.mutex.RUnlock()
+	app.Store.ClearMap()
 }

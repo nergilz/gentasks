@@ -14,28 +14,30 @@ const (
 )
 
 type Generator struct {
-	Ctx    context.Context
-	Wg     *sync.WaitGroup
+	ctx    context.Context
+	wg     *sync.WaitGroup
 	SendCh chan handler.Task
 }
 
 func InitGenerator(ctx context.Context, sendCh chan handler.Task, wg *sync.WaitGroup) *Generator {
 	return &Generator{
-		Ctx:    ctx,
-		Wg:     wg,
+		ctx:    ctx,
+		wg:     wg,
 		SendCh: sendCh,
 	}
 }
 
+// генератор создает канал и когда вызываеш reciv передаешь его
 func (g *Generator) Send(sendC *uint32) {
-	defer g.Wg.Done()
+	defer g.wg.Done()
 	defer close(g.SendCh)
 
 	timer := time.NewTimer(time.Second * time.Duration(handler.WorkerTimer))
+	defer timer.Stop()
 
 	for {
 		select {
-		case <-g.Ctx.Done():
+		case <-g.ctx.Done():
 			log.Println(" ctx send done")
 			return
 		case <-timer.C:
