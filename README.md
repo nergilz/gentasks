@@ -10,14 +10,14 @@
 для запуска кода не требуется никаких зависимостей
 
 ```bash
-$ git clone https://github.com/nergilz/gentasks.git
+git clone https://github.com/nergilz/gentasks.git
 
 ```
 
 ```bash
-$ go run .
+go run .
 ```
 
 ```bash
-$ go test ./test/app_test.go
+go test ./test/app_test.go
 ```
