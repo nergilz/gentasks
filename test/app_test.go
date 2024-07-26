@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestMain(t *testing.T) {
+func TestCountSendAndRevc(t *testing.T) {
 	ctx, _ := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	store := handler.InitStore()
 	app := handler.InitAppHandler(ctx, store)

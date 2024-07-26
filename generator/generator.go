@@ -27,7 +27,6 @@ func InitGenerator(ctx context.Context, sendCh chan handler.Task, wg *sync.WaitG
 	}
 }
 
-// генератор создает канал и когда вызываеш reciv передаешь его
 func (g *Generator) Send(sendC *uint32) {
 	defer g.wg.Done()
 	defer close(g.SendCh)

@@ -107,12 +107,12 @@ func (app *AppHandler) Output(sendC, recvC *uint32) {
 			return
 		case <-app.done:
 			app.printSeparateTaskFromStore(recvC)
-			log.Println("send task:", *sendC, "recive task", *recvC)
+			log.Println("send task:", *sendC, "recive task:", *recvC)
 			fmt.Println(" send worker done")
 			return
 		case <-ticker.C:
 			app.printSeparateTaskFromStore(recvC)
-			log.Println("send task:", *sendC, "recive task", *recvC)
+			log.Println("send task:", *sendC, "recive task:", *recvC)
 		}
 	}
 }
