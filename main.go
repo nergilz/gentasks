@@ -14,7 +14,7 @@ func main() {
 	ctx, _ := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 
 	store := handler.InitStore()
-	app := handler.InitAppHandler(ctx, store)
+	app := handler.InitAppHandler(store)
 	gen := generator.InitGenerator(ctx, app.SendTaskCh, app.Wg)
 
 	var sendC uint32
@@ -24,7 +24,7 @@ func main() {
 	go gen.Send(&sendC)
 
 	app.Wg.Add(1)
-	go app.Recv()
+	go app.Recv(ctx)
 
 	app.Wg.Add(1)
 	go app.LoadSuccess()
@@ -33,7 +33,7 @@ func main() {
 	go app.LoadFailed()
 
 	app.Wg.Add(1)
-	go app.Output(&sendC, &recvC)
+	go app.Output(ctx, &sendC, &recvC)
 
 	app.Wg.Wait()
 	log.Println("worker stoped")

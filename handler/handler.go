@@ -18,7 +18,6 @@ const (
 
 type (
 	AppHandler struct {
-		ctx           context.Context
 		Wg            *sync.WaitGroup
 		SendTaskCh    chan Task
 		WarningTaskCh chan Task
@@ -36,9 +35,8 @@ type (
 	}
 )
 
-func InitAppHandler(ctx context.Context, store *AppStore) *AppHandler {
+func InitAppHandler(store *AppStore) *AppHandler {
 	return &AppHandler{
-		ctx:           ctx,
 		Wg:            &sync.WaitGroup{},
 		SendTaskCh:    make(chan Task, 256),
 		WarningTaskCh: make(chan Task, 256),
@@ -49,7 +47,7 @@ func InitAppHandler(ctx context.Context, store *AppStore) *AppHandler {
 }
 
 // сonsume channel with tasks
-func (app *AppHandler) Recv() {
+func (app *AppHandler) Recv(ctx context.Context) {
 	defer app.Wg.Done()
 	defer close(app.SuccessTaskCh)
 	defer close(app.WarningTaskCh)
@@ -57,7 +55,7 @@ func (app *AppHandler) Recv() {
 
 	for {
 		select {
-		case <-app.ctx.Done():
+		case <-ctx.Done():
 			return
 		case task, ok := <-app.SendTaskCh:
 			if ok {
@@ -95,7 +93,7 @@ func (app *AppHandler) LoadFailed() {
 	}
 }
 
-func (app *AppHandler) Output(sendC, recvC *uint32) {
+func (app *AppHandler) Output(ctx context.Context, sendC, recvC *uint32) {
 	defer app.Wg.Done()
 
 	ticker := time.NewTicker(time.Second * OutpuTicker)
@@ -103,7 +101,7 @@ func (app *AppHandler) Output(sendC, recvC *uint32) {
 
 	for {
 		select {
-		case <-app.ctx.Done():
+		case <-ctx.Done():
 			return
 		case <-app.done:
 			app.printSeparateTaskFromStore(recvC)
